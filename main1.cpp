@@ -1,3 +1,7 @@
+//
+// Created by jai on 18/11/18.
+//
+
 #include <iostream>
 #include <cstdlib>
 #include <ctime>
@@ -40,11 +44,12 @@ vector<int> receiveany()
     MPI_Recv(&msg[0] ,6 ,MPI_INT , MPI_ANY_SOURCE , 0 , MPI_COMM_WORLD ,  MPI_STATUS_IGNORE);
     return msg;
 }
-int election_result(int id, int amiin)
+vector<int> election_result(int id, int amiin)
 {
     int n = amiin;
     int flag = 1;
     MPI_Status stat;
+    vector<int> result;
     while(flag)
     {
         MPI_Iprobe(MPI_ANY_SOURCE , MPI_ANY_TAG , MPI_COMM_WORLD , &flag , &stat);
@@ -57,15 +62,15 @@ int election_result(int id, int amiin)
                 n = n - flag;
         }
     }
-    if(n != 1 )
-        return 0;
-    else
+    result.push_back(n);
+    if(n == 1 )
     {
         if(amiin == 0)
-        return stat.MPI_SOURCE + 1;
+            result.push_back(stat.MPI_SOURCE );
         else
-            return id + 1;
+            result.push_back(id );
     }
+    return  result;
 }
 
 void leader_election(int id , int size)
@@ -74,43 +79,97 @@ void leader_election(int id , int size)
         exit(0);
     total--;
     MPI_Barrier(MPI_COMM_WORLD);
-    int k = 1;
+    int i = 1;
     int leader;
-    while(true)
+    int amiin = 0;
+    while (true)
     {
-        for (int i = 0; i < 6* k; ++i)
-        {
-            int amiin = 0;
 
-            mt19937 rng;
-            rng.seed(random_device()());
-            uniform_int_distribution<mt19937::result_type> dist(1, static_cast<unsigned long>(pow(2 ,k)));
-            unsigned long r = dist(rng);
-            //cout<<i <<" " << id << "rng " << r << "\n";
-            if(r == 1) {
-                vector<int> msg;
-                msg.push_back(0);
-                msg.push_back(id);
-                sendall(msg , id , size);
-                amiin = 1;
-            }
-            //cout<<i <<" " << id << "ami " << amiin << "\n";
-            MPI_Barrier(MPI_COMM_WORLD);
-            int result = election_result(id , amiin);
-            if(result != 0)
-            {
-                leader = result - 1;
-                goto end;
-            }
-            MPI_Barrier(MPI_COMM_WORLD);
+        i = 2*i;
+        mt19937 rng;
+        rng.seed(random_device()());
+        uniform_int_distribution<mt19937::result_type> dist(1, static_cast<unsigned long>(pow(2 ,i)));
+        unsigned long r = dist(rng);
+
+        if(r == 1) {
+            vector<int> msg;
+            msg.push_back(0);
+            msg.push_back(id);
+            sendall(msg , id , size);
+            amiin = 1;
         }
-        k++;
+        MPI_Barrier(MPI_COMM_WORLD);
+        vector<int> result = election_result(id , amiin);
+        if(result[0] == 0)
+            break;
+        amiin = 0;
     }
-    end:
+    MPI_Barrier(MPI_COMM_WORLD);
+    int l = static_cast<int>(pow(2 , i/2));
+    int u = static_cast<int>(pow(2 , i));
+    amiin = 0;
+    while( l + 1 < u)
+    {
+        int j = (l + u)/2;
+        mt19937 rng;
+        rng.seed(random_device()());
+        uniform_int_distribution<mt19937::result_type> dist(1, static_cast<unsigned long>(pow(2 ,j)));
+        unsigned long r = dist(rng);
+
+        if(r == 1) {
+            vector<int> msg;
+            msg.push_back(0);
+            msg.push_back(id);
+            sendall(msg , id , size);
+            amiin = 1;
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
+        vector<int> result = election_result(id , amiin);
+
+        if(result[0] == 0)
+            u = j;
+        else
+            l = j;
+        MPI_Barrier(MPI_COMM_WORLD);
+        amiin = 0;
+    }
+    int k = u;
+    amiin = 0;
+    while (true)
+    {
+
+
+        mt19937 rng;
+        rng.seed(random_device()());
+        uniform_int_distribution<mt19937::result_type> dist(1, static_cast<unsigned long>(pow(2 ,k)));
+        unsigned long r = dist(rng);
+
+        if(r == 1) {
+            vector<int> msg;
+            msg.push_back(0);
+            msg.push_back(id);
+            sendall(msg , id , size);
+            amiin = 1;
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
+        vector<int> result = election_result(id , amiin);
+        if(result[0] == 0)
+            k = k - 1;
+        else
+            k = k + 1;
+        if(result[0] == 1)
+        {
+            leader = result[1];
+            break;
+        }
+        amiin = 0;
+        MPI_Barrier(MPI_COMM_WORLD);
+    }
+
     if(id == leader)
-    leader_function(id , size);
+        leader_function(id , size);
     else
-    normal(id , leader , size);
+        normal(id , leader , size);
 }
 void leader_function(int id , int size)
 {
@@ -119,7 +178,7 @@ void leader_function(int id , int size)
     rng.seed(random_device()());
     uniform_int_distribution<mt19937::result_type> dist(1, 40);
     unsigned long r = dist(rng);
-    
+
     stack <int> s;
     while (r > 0)
     {
@@ -133,7 +192,7 @@ void leader_function(int id , int size)
         {
             vector<int> reply;
             reply.push_back(3);
-            if(s.size() == 0)
+            if(s.empty())
                 reply.push_back(-1);
             else
                 reply.push_back(s.top());
@@ -152,16 +211,16 @@ void leader_function(int id , int size)
 void normal( int id , int leader , int size)
 {
     cout << "Process "<<id <<" knows Leader is process " << leader << "\n";
-    mt19937 rng;
-    rng.seed(random_device()());
-    uniform_int_distribution<mt19937::result_type> dist(1, 2);
-    unsigned long r = dist(rng);
+
     while(true) {
         vector<int> msg;
+        mt19937 rng;
+        rng.seed(random_device()());
+        uniform_int_distribution<mt19937::result_type> dist(1, 2);
+        unsigned long r = dist(rng);
         if (r == 1) {
             msg.push_back(1);
 
-            mt19937 rng;
             rng.seed(random_device()());
             uniform_int_distribution<mt19937::result_type> dist(1, 1000);
             unsigned long r1 = dist(rng);
@@ -183,7 +242,7 @@ void normal( int id , int leader , int size)
                 if(reply[1] == -1)
                     cout<<" No information available for process "<<id<<"\n";
                 else
-                cout << "Process " << id << " receives information from leader \n";
+                    cout << "Process " << id << " receives information from leader \n";
             }
             else
                 cout<<"This shouldnt come";
