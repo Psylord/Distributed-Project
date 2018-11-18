@@ -119,7 +119,7 @@ void leader_function(int id , int size)
     rng.seed(random_device()());
     uniform_int_distribution<mt19937::result_type> dist(1, 40);
     unsigned long r = dist(rng);
-    r = 2;
+    
     stack <int> s;
     while (r > 0)
     {
