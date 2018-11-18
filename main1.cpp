@@ -53,6 +53,8 @@ int election_result(int id, int amiin)
         if(flag) {
             //cout <<"source " << stat.MPI_SOURCE << "\n";
             vector<int> msg = receive(stat.MPI_SOURCE);
+            if(msg[0] != 0)
+                n = n - flag;
         }
     }
     if(n != 1 )
@@ -117,6 +119,7 @@ void leader_function(int id , int size)
     rng.seed(random_device()());
     uniform_int_distribution<mt19937::result_type> dist(1, 40);
     unsigned long r = dist(rng);
+    r = 2;
     stack <int> s;
     while (r > 0)
     {
@@ -130,9 +133,13 @@ void leader_function(int id , int size)
         {
             vector<int> reply;
             reply.push_back(3);
-            reply.push_back(s.top());
+            if(s.size() == 0)
+                reply.push_back(-1);
+            else
+                reply.push_back(s.top());
+            cout<<"Leader sends message "<<reply[1] << " to " << msg[1] <<"\n";
             send(reply , msg[1]);
-            cout<<"Leader sends message to " << msg[1] <<"\n";
+
         }
         r--;
     }
@@ -144,7 +151,7 @@ void leader_function(int id , int size)
 }
 void normal( int id , int leader , int size)
 {
-    cout << "Leader is process " << leader << "\n";
+    cout << "Process "<<id <<" knows Leader is process " << leader << "\n";
     mt19937 rng;
     rng.seed(random_device()());
     uniform_int_distribution<mt19937::result_type> dist(1, 2);
@@ -160,17 +167,26 @@ void normal( int id , int leader , int size)
             unsigned long r1 = dist(rng);
 
             msg.push_back(r1);
-            cout << "Process " << id << " sends message to leader \n";
+            cout << "Process " << id << " sends message " << r1 << " to leader \n";
             send(msg, leader);
 
         } else if (r == 2) {
             msg.push_back(2);
             msg.push_back(id);
+            send(msg , leader);
             vector<int> reply = receive(leader);
             if (reply[0] == 4) {
                 leader_election(id, size);
-            } else if (reply[0] == 3)
+            }
+            else if (reply[0] == 3)
+            {
+                if(reply[1] == -1)
+                    cout<<" No information available for process "<<id<<"\n";
+                else
                 cout << "Process " << id << " receives information from leader \n";
+            }
+            else
+                cout<<"This shouldnt come";
         }
         int flag;
         MPI_Iprobe(leader, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, MPI_STATUS_IGNORE);
@@ -179,10 +195,11 @@ void normal( int id , int leader , int size)
             break;
 
     }
+
     leader_election(id, size);
 }
-int main ( int argc, char *argv[] )
 
+int main ( int argc, char *argv[] )
 {
     int id;
     int ierr;
